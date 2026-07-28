@@ -401,6 +401,41 @@ export function SettingsApp() {
               开机启动仅在打包后的 dmg 应用中生效；开发模式（npm run
               dev）下 macOS 会拒绝写入登录项。
             </p>
+            <label className="checkbox">
+              <input
+                type="checkbox"
+                checked={settings.general.autoBlink !== false}
+                onChange={(e) =>
+                  setSettings({
+                    ...settings,
+                    general: {
+                      ...settings.general,
+                      autoBlink: e.target.checked,
+                    },
+                  })
+                }
+              />
+              自动眨眼
+            </label>
+            <label className="checkbox">
+              <input
+                type="checkbox"
+                checked={settings.general.lookAt !== false}
+                onChange={(e) =>
+                  setSettings({
+                    ...settings,
+                    general: {
+                      ...settings.general,
+                      lookAt: e.target.checked,
+                    },
+                  })
+                }
+              />
+              视线跟随鼠标
+            </label>
+            <p className="desc">
+              眨眼 / 注视参考 AIRI 等 Live2D 伴侣的「生命感」做法；说话时会暂停眨眼以免抢口型。
+            </p>
             <label>
               宽度 ({settings.general.petWidth}px)
               <input

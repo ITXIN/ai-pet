@@ -41,6 +41,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
     clickThrough: true,
     openAtLogin: false,
     onboardingDone: false,
+    autoBlink: true,
+    lookAt: true,
   },
 }
 

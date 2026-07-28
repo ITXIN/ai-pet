@@ -95,11 +95,19 @@ export const EMOTION_IDLE_INDEX: Record<Emotion, number> = {
   thinking: 6,
 }
 
+export function getEmotionParamTargets(
+  emotion: Emotion,
+): Record<string, number> {
+  return {
+    ...(EMOTION_PARAM_PRESETS[emotion] ?? EMOTION_PARAM_PRESETS.neutral),
+  }
+}
+
 export function applyEmotionPreset(
   emotion: Emotion,
   setParam: ParamWriter,
 ): void {
-  const preset = EMOTION_PARAM_PRESETS[emotion] ?? EMOTION_PARAM_PRESETS.neutral
+  const preset = getEmotionParamTargets(emotion)
   for (const [id, value] of Object.entries(preset)) {
     try {
       setParam(id, value)

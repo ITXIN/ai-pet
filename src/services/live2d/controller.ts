@@ -8,8 +8,8 @@ import type {
   MotionName,
 } from '../../shared/types'
 import {
-  applyEmotionPreset,
   EMOTION_IDLE_INDEX,
+  getEmotionParamTargets,
 } from './emotionPresets'
 import { resolveMotion, resolveTalkGroup } from './motionResolve'
 
@@ -17,6 +17,27 @@ Live2DModel.registerTicker(PIXI.Ticker)
 
 type CoreModel = {
   setParameterValueById?: (id: string, value: number) => void
+}
+
+const EYE_OPEN_IDS = ['ParamEyeLOpen', 'ParamEyeROpen']
+const LOOK_PARAM_IDS = [
+  'ParamEyeBallX',
+  'ParamEyeBallY',
+  'ParamAngleX',
+  'ParamAngleY',
+]
+
+function lerp(a: number, b: number, t: number): number {
+  return a + (b - a) * t
+}
+
+function clamp(v: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, v))
+}
+
+export interface LifeOptions {
+  autoBlink?: boolean
+  lookAt?: boolean
 }
 
 export class Live2DController {
@@ -38,14 +59,19 @@ export class Live2DController {
   private speaking = false
   private onSpeakingMotionFinish: (() => void) | null = null
 
-  private applyPresetExcludingLip(): void {
-    if (this.emotionMode !== 'preset') return
-    const lip = new Set(this.capabilities.lipSyncParams)
-    applyEmotionPreset(this.lastEmotion, (id, v) => {
-      if (lip.has(id)) return
-      this.setParam(id, v)
-    })
-  }
+  private autoBlink = true
+  private lookAtEnabled = true
+  private lifeTicker: (() => void) | null = null
+  private emotionTargets: Record<string, number> = {}
+  private emotionCurrent: Record<string, number> = {}
+  private focusTargetX = 0
+  private focusTargetY = 0
+  private focusCurrentX = 0
+  private focusCurrentY = 0
+  private focusActive = false
+  private blinkOpenUntil = 0
+  private blinkPhase: 'open' | 'closing' | 'closed' | 'opening' = 'open'
+  private blinkMul = 1
 
   constructor(container: HTMLElement) {
     this.container = container
@@ -82,10 +108,41 @@ export class Live2DController {
     this.modelMeta = meta
   }
 
+  setLifeOptions(opts: LifeOptions): void {
+    if (opts.autoBlink !== undefined) this.autoBlink = opts.autoBlink
+    if (opts.lookAt !== undefined) this.lookAtEnabled = opts.lookAt
+    if (!this.lookAtEnabled) {
+      this.focusActive = false
+      this.focusTargetX = 0
+      this.focusTargetY = 0
+    }
+  }
+
+  /** 指针 client 坐标 → 归一化注视（-1~1） */
+  setLookAtFromClient(clientX: number, clientY: number): void {
+    if (!this.lookAtEnabled || !this.app) return
+    const canvas = this.getCanvas()
+    if (!canvas) return
+    const rect = canvas.getBoundingClientRect()
+    if (rect.width <= 0 || rect.height <= 0) return
+    const nx = ((clientX - rect.left) / rect.width) * 2 - 1
+    const ny = ((clientY - rect.top) / rect.height) * 2 - 1
+    this.focusTargetX = clamp(nx, -1, 1)
+    this.focusTargetY = clamp(ny, -1, 1)
+    this.focusActive = true
+  }
+
+  clearLookAt(): void {
+    this.focusActive = false
+    this.focusTargetX = 0
+    this.focusTargetY = 0
+  }
+
   async loadModel(modelUrl: string): Promise<void> {
     if (!this.app) throw new Error('Live2D 未初始化')
 
     this.stopSpeakingMotion(false)
+    this.stopLifeTicker()
 
     if (this.model) {
       this.app.stage.removeChild(this.model)
@@ -111,6 +168,8 @@ export class Live2DController {
       if (hitAreas.length && !this.speaking) void this.playMotion('Tap')
     })
 
+    this.scheduleNextBlink()
+    this.startLifeTicker()
     void this.playMotion('Idle', MotionPriority.IDLE)
     void this.setEmotion('neutral')
   }
@@ -167,6 +226,126 @@ export class Live2DController {
     core?.setParameterValueById?.(id, value)
   }
 
+  private scheduleNextBlink(): void {
+    const wait = 2000 + Math.random() * 3000
+    this.blinkOpenUntil = performance.now() + wait
+    this.blinkPhase = 'open'
+    this.blinkMul = 1
+  }
+
+  private updateBlink(now: number): void {
+    if (!this.autoBlink || this.speaking) {
+      this.blinkMul = 1
+      this.blinkPhase = 'open'
+      return
+    }
+
+    switch (this.blinkPhase) {
+      case 'open':
+        if (now >= this.blinkOpenUntil) {
+          this.blinkPhase = 'closing'
+        }
+        break
+      case 'closing':
+        this.blinkMul = Math.max(0, this.blinkMul - 0.35)
+        if (this.blinkMul <= 0) {
+          this.blinkMul = 0
+          this.blinkPhase = 'closed'
+          this.blinkOpenUntil = now + 80 + Math.random() * 70
+        }
+        break
+      case 'closed':
+        if (now >= this.blinkOpenUntil) {
+          this.blinkPhase = 'opening'
+        }
+        break
+      case 'opening':
+        this.blinkMul = Math.min(1, this.blinkMul + 0.28)
+        if (this.blinkMul >= 1) {
+          this.blinkMul = 1
+          this.scheduleNextBlink()
+        }
+        break
+    }
+  }
+
+  private updateLookAt(): void {
+    const tx = this.focusActive && this.lookAtEnabled ? this.focusTargetX : 0
+    const ty = this.focusActive && this.lookAtEnabled ? this.focusTargetY : 0
+    this.focusCurrentX = lerp(this.focusCurrentX, tx, 0.12)
+    this.focusCurrentY = lerp(this.focusCurrentY, ty, 0.12)
+  }
+
+  private updateEmotionLerp(): void {
+    if (this.emotionMode !== 'preset') return
+    const lip = new Set(this.capabilities.lipSyncParams)
+    for (const [id, target] of Object.entries(this.emotionTargets)) {
+      if (lip.has(id)) continue
+      if (LOOK_PARAM_IDS.includes(id)) continue
+      const cur = this.emotionCurrent[id] ?? target
+      const next = lerp(cur, target, 0.18)
+      this.emotionCurrent[id] = next
+    }
+  }
+
+  private applyLifeFrame(): void {
+    if (!this.model) return
+    const now = performance.now()
+    this.updateBlink(now)
+    this.updateLookAt()
+    this.updateEmotionLerp()
+
+    const lip = new Set(this.capabilities.lipSyncParams)
+
+    if (this.emotionMode === 'preset') {
+      for (const [id, value] of Object.entries(this.emotionCurrent)) {
+        if (lip.has(id)) continue
+        if (LOOK_PARAM_IDS.includes(id)) continue
+        if (EYE_OPEN_IDS.includes(id)) continue
+        this.setParam(id, value)
+      }
+      for (const eyeId of EYE_OPEN_IDS) {
+        const base =
+          this.emotionCurrent[eyeId] ??
+          this.emotionTargets[eyeId] ??
+          1
+        this.setParam(eyeId, base * this.blinkMul)
+      }
+    } else if (this.blinkMul < 0.99) {
+      // file expression：仅闭眼阶段覆盖，避免常开强行写成 1
+      for (const eyeId of EYE_OPEN_IDS) {
+        this.setParam(eyeId, this.blinkMul)
+      }
+    }
+
+    if (this.lookAtEnabled || Math.abs(this.focusCurrentX) > 0.01) {
+      this.setParam('ParamEyeBallX', this.focusCurrentX)
+      this.setParam('ParamEyeBallY', -this.focusCurrentY * 0.6)
+      this.setParam('ParamAngleX', this.focusCurrentX * 15)
+      this.setParam('ParamAngleY', -this.focusCurrentY * 10)
+    }
+  }
+
+  private startLifeTicker(): void {
+    this.stopLifeTicker()
+    if (!this.app || !this.model) return
+    this.lifeTicker = () => this.applyLifeFrame()
+    this.app.ticker.add(this.lifeTicker)
+    this.afterMotionHandler = () => this.applyLifeFrame()
+    this.model.internalModel.on('afterMotionUpdate', this.afterMotionHandler)
+  }
+
+  private stopLifeTicker(): void {
+    if (this.app && this.lifeTicker) {
+      this.app.ticker.remove(this.lifeTicker)
+      this.lifeTicker = null
+    }
+    if (this.model && this.afterMotionHandler) {
+      this.model.internalModel.off('afterMotionUpdate', this.afterMotionHandler)
+      this.afterMotionHandler = null
+    }
+  }
+
   private async applyExpressionName(name: string): Promise<boolean> {
     if (!this.model) return false
     try {
@@ -221,31 +400,25 @@ export class Live2DController {
     }
 
     this.emotionMode = 'preset'
-    applyEmotionPreset(emotion, (id, v) => this.setParam(id, v))
+    this.emotionTargets = getEmotionParamTargets(emotion)
+    // 首次进入 preset：若尚无 current，用 target 初始化；否则保留 current 做 lerp
+    for (const [id, v] of Object.entries(this.emotionTargets)) {
+      if (this.emotionCurrent[id] === undefined) {
+        this.emotionCurrent[id] = v
+      }
+    }
     this.startEmotionTicker()
     console.debug('[live2d] emotion preset', emotion)
   }
 
+  /** @deprecated 生命感 ticker 已覆盖；保留以兼容旧调用 */
   private startEmotionTicker(): void {
-    this.stopEmotionTicker()
-    if (!this.model) return
-    this.afterMotionHandler = () => this.applyPresetExcludingLip()
-    this.model.internalModel.on('afterMotionUpdate', this.afterMotionHandler)
-    if (this.app) {
-      this.emotionTicker = () => this.applyPresetExcludingLip()
-      this.app.ticker.add(this.emotionTicker)
-    }
+    // life ticker 已统一驱动；确保已启动
+    if (!this.lifeTicker) this.startLifeTicker()
   }
 
   private stopEmotionTicker(): void {
-    if (this.model && this.afterMotionHandler) {
-      this.model.internalModel.off('afterMotionUpdate', this.afterMotionHandler)
-      this.afterMotionHandler = null
-    }
-    if (this.app && this.emotionTicker) {
-      this.app.ticker.remove(this.emotionTicker)
-      this.emotionTicker = null
-    }
+    /* expression file 模式不跑 preset lerp，life ticker 仍跑眨眼/注视 */
   }
 
   async playMotion(
@@ -253,9 +426,6 @@ export class Live2DController {
     priority: MotionPriority = MotionPriority.FORCE,
   ): Promise<void> {
     if (!this.model) return
-    if (this.speaking && priority === MotionPriority.FORCE) {
-      // 说话循环中允许 FORCE 表演，但会短暂打断 Talk；表演后由 motionFinish 续上
-    }
 
     const preferredIdle = EMOTION_IDLE_INDEX[this.lastEmotion]
     const resolved = resolveMotion(
@@ -299,10 +469,11 @@ export class Live2DController {
     }
   }
 
-  /** TTS 开始：循环 Talk/Idle，不盖过口型参数 */
   startSpeakingMotion(): void {
     if (!this.model) return
     this.speaking = true
+    this.blinkMul = 1
+    this.blinkPhase = 'open'
     const mm = this.model.internalModel.motionManager
     if (!this.onSpeakingMotionFinish) {
       this.onSpeakingMotionFinish = () => {
@@ -313,9 +484,9 @@ export class Live2DController {
     void this.playSpeakingClip()
   }
 
-  /** TTS 结束：停止说话循环并回 Idle */
   stopSpeakingMotion(returnIdle = true): void {
     this.speaking = false
+    this.scheduleNextBlink()
     if (this.model && this.onSpeakingMotionFinish) {
       this.model.internalModel.motionManager.off(
         'motionFinish',
@@ -327,7 +498,6 @@ export class Live2DController {
     }
   }
 
-  /** 0~1，带平滑 */
   setMouthOpen(level: number): void {
     const target = Math.max(0, Math.min(1, level))
     this.mouthSmoothed = this.mouthSmoothed * 0.6 + target * 0.4
@@ -336,9 +506,8 @@ export class Live2DController {
     }
   }
 
-  /** @deprecated 改用音频 level 驱动；保留空实现避免旧调用报错 */
   startMouthSync(): void {
-    /* no-op: use setMouthOpen from audio analyser */
+    /* no-op */
   }
 
   stopMouthSync(): void {
@@ -427,7 +596,7 @@ export class Live2DController {
   destroy(): void {
     this.destroyed = true
     this.stopSpeakingMotion(false)
-    this.stopEmotionTicker()
+    this.stopLifeTicker()
     this.stopMouthSync()
     if (this.model) {
       this.model.destroy()

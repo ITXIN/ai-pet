@@ -100,6 +100,10 @@ export function PetApp() {
         const controller = new Live2DController(stageRef.current)
         controllerRef.current = controller
         await controller.init(s.general.petWidth, s.general.petHeight)
+        controller.setLifeOptions({
+          autoBlink: s.general.autoBlink !== false,
+          lookAt: s.general.lookAt !== false,
+        })
 
         try {
           if (!isCubismReady()) {
@@ -130,6 +134,10 @@ export function PetApp() {
             setSettings(next)
             clickThroughRef.current = next.general.clickThrough !== false
             if (next.general.onboardingDone) setOnboardingStep(null)
+            controller.setLifeOptions({
+              autoBlink: next.general.autoBlink !== false,
+              lookAt: next.general.lookAt !== false,
+            })
             controller.resize(next.general.petWidth, next.general.petHeight)
             try {
               const url = await window.aiPet.resolveModelUrl(next.modelPath)
@@ -243,6 +251,22 @@ export function PetApp() {
       applyIgnore(true)
     }
 
+    window.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseleave', onLeave)
+    return () => {
+      window.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseleave', onLeave)
+    }
+  }, [])
+
+  // 视线跟随：指针在窗内时驱动眼球/头，离开回中
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      controllerRef.current?.setLookAtFromClient(e.clientX, e.clientY)
+    }
+    const onLeave = () => {
+      controllerRef.current?.clearLookAt()
+    }
     window.addEventListener('mousemove', onMove)
     document.addEventListener('mouseleave', onLeave)
     return () => {
@@ -387,6 +411,8 @@ export function PetApp() {
           clickThrough: true,
           openAtLogin: false,
           onboardingDone: true,
+          autoBlink: true,
+          lookAt: true,
         }),
         onboardingDone: true,
       },

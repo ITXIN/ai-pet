@@ -10,6 +10,7 @@
 - **用户指令预识别**：说「请跳舞 / 挥挥手」时在 LLM 返回前就开始动作
 - LLM `[emotion][motion]` 标签 + 漏标签时回落意图 / Idle
 - 设置：形象 / 大模型 / 语音 / 通用；首次新手引导
+- 生命感：自动眨眼、视线跟随、表情参数平滑过渡（思路参考 [AIRI](https://github.com/moeru-ai/airi) 的 Live2D 控制，未引入其依赖）
 - 检查更新（GitHub Releases）
 
 ## 环境要求

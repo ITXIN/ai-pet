@@ -69,6 +69,10 @@ export interface AppSettings {
     clickThrough: boolean
     openAtLogin: boolean
     onboardingDone: boolean
+    /** 自动眨眼（参考 AIRI 生命感） */
+    autoBlink: boolean
+    /** 视线跟随指针 */
+    lookAt: boolean
   }
 }
 
