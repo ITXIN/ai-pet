@@ -10,8 +10,8 @@
     "build": "tsc -p tsconfig.node.json --noEmit && vite build",
     "dist": "npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false env -u NODE_OPTIONS electron-builder --mac dmg",
     "start": "env -u NODE_OPTIONS electron .",
-    "test:parse": "npx --yes tsx -e \"import { parseReplyTags } from './src/shared/parseReply.ts'; const r = parseReplyTags('[emotion:happy][motion:Wave]你好'); if (r.emotion!=='happy'||r.motion!=='Wave'||r.text!=='你好') { console.error(r); process.exit(1)}; console.log('parse ok', r);\"",
-    "test:intent": "npx --yes tsx -e \"import { matchUserIntent } from './src/shared/intentRules.ts'; import { mergeReplyWithIntent } from './src/shared/mergeReply.ts'; import { parseReplyTags } from './src/shared/parseReply.ts'; const i=matchUserIntent('请跳舞'); if(!i.matched||i.motion!=='Dance') { console.error(i); process.exit(1)}; const m=mergeReplyWithIntent(parseReplyTags('随便聊聊'), i); if(m.motion!=='Dance'||m.emotion!=='happy'){console.error(m);process.exit(1)}; console.log('intent ok', i, m);\""
+    "test:parse": "npx --yes tsx -e \"import { parseReplyTags } from './src/shared/parseReply.ts'; import { ReplyStreamParser } from './src/shared/parseReplyStream.ts'; const r = parseReplyTags('[emotion:happy][motion:Wave]你好'); if (r.emotion!=='happy'||r.motion!=='Wave'||r.text!=='你好') { console.error(r); process.exit(1)}; const p=new ReplyStreamParser(); const chunks=['[emotion:ha','ppy][mot','ion:Dance]跳','舞呀']; let sawE=false,sawM=false; for (const c of chunks){ const d=p.push(c); if(d.emotionChanged&&d.emotion==='happy')sawE=true; if(d.motionChanged&&d.motion==='Dance')sawM=true;} const f=p.finish(); if(!sawE||!sawM||f.emotion!=='happy'||f.motion!=='Dance'||!f.text.includes('跳舞')){console.error('stream fail',{sawE,sawM,f});process.exit(1)}; console.log('parse ok', r); console.log('stream ok', f);\"",
+    "test:intent": "npx --yes tsx scripts/test-intent.ts"
   },
   "dependencies": {
     "electron-store": "^8.2.0",

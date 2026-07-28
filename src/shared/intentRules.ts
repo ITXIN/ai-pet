@@ -14,20 +14,84 @@ interface Rule {
   label: string
 }
 
-/** 用户话术 → 立刻表演的意图（先于 LLM） */
+/**
+ * 用户话术 → 立刻表演的意图（先于 LLM）。
+ * 规则偏「指令边界」，避免闲聊误触（如「我不要这个」）。
+ */
 const RULES: Rule[] = [
-  { pattern: /跳(个|支)?舞|dance|蹦迪|扭一扭/i, motion: 'Dance', emotion: 'happy', label: '跳舞' },
-  { pattern: /挥(挥)?手|招(招)?手|打招[呼呼]|wave/i, motion: 'Wave', emotion: 'happy', label: '挥手' },
-  { pattern: /点(点)?头|同意|好的吧|nod/i, motion: 'Nod', emotion: 'neutral', label: '点头' },
-  { pattern: /摇(摇)?头|拒绝|不要|shake/i, motion: 'Shake', emotion: 'angry', label: '摇头' },
-  { pattern: /拍(拍)?|碰(碰)?|tap/i, motion: 'Tap', emotion: 'surprised', label: '轻拍' },
-  { pattern: /想(一想|想)|思考|think/i, motion: 'Think', emotion: 'thinking', label: '思考' },
-  { pattern: /开心|高兴|开心一点|笑一个|happy/i, emotion: 'happy', motion: 'Wave', label: '开心' },
-  { pattern: /难过|伤心|哭|沮丧|sad/i, emotion: 'sad', motion: 'Idle', label: '难过' },
-  { pattern: /生气|愤怒|恼火|angry/i, emotion: 'angry', motion: 'Shake', label: '生气' },
-  { pattern: /吃惊|惊讶|surprised|吓/i, emotion: 'surprised', motion: 'Tap', label: '惊讶' },
-  { pattern: /害羞|不好意思|shy/i, emotion: 'shy', motion: 'Idle', label: '害羞' },
-  { pattern: /待机|休息|idle/i, emotion: 'neutral', motion: 'Idle', label: '待机' },
+  {
+    pattern: /(请|来|再)?跳(个|支)?舞|dance|蹦迪|扭一扭/i,
+    motion: 'Dance',
+    emotion: 'happy',
+    label: '跳舞',
+  },
+  {
+    pattern: /(请|来)?挥(挥)?手|(请|来)?招(招)?手|打招呼|wave/i,
+    motion: 'Wave',
+    emotion: 'happy',
+    label: '挥手',
+  },
+  {
+    pattern: /(请|来)?点(点)?头|\bnod\b/i,
+    motion: 'Nod',
+    emotion: 'neutral',
+    label: '点头',
+  },
+  {
+    pattern: /(请|来)?摇(摇)?头|(请|来)?摇晃|晃(一晃|晃)|摇摆|\bshake\b/i,
+    motion: 'Shake',
+    emotion: 'angry',
+    label: '摇晃',
+  },
+  {
+    pattern:
+      /(请|来)?(拍一拍|拍拍|拍一下)|(请|来)?(碰一碰|碰碰|碰一下)|\btap\b/i,
+    motion: 'Tap',
+    emotion: 'surprised',
+    label: '轻拍',
+  },
+  {
+    pattern: /(请|来)?想一想|思考一下|思考|\bthink\b/i,
+    motion: 'Think',
+    emotion: 'thinking',
+    label: '思考',
+  },
+  {
+    pattern: /(请|来)?(开心|高兴)(一点)?|(请|来)?笑一个|\bhappy\b/i,
+    emotion: 'happy',
+    motion: 'Wave',
+    label: '开心',
+  },
+  {
+    pattern: /(请|来)?(难过|伤心)(一点)?|(请|来)?哭一个|\bsad\b/i,
+    emotion: 'sad',
+    motion: 'Idle',
+    label: '难过',
+  },
+  {
+    pattern: /(请|来)?(生气|愤怒|恼火)(一下)?|\bangry\b/i,
+    emotion: 'angry',
+    motion: 'Shake',
+    label: '生气',
+  },
+  {
+    pattern: /(请|来)?(吃惊|惊讶)(一下)?|\bsurprised\b/i,
+    emotion: 'surprised',
+    motion: 'Tap',
+    label: '惊讶',
+  },
+  {
+    pattern: /(请|来)?(害羞|不好意思)(一下)?|\bshy\b/i,
+    emotion: 'shy',
+    motion: 'Idle',
+    label: '害羞',
+  },
+  {
+    pattern: /(请|来)?(待机|休息一下|休息)|\bidle\b/i,
+    emotion: 'neutral',
+    motion: 'Idle',
+    label: '待机',
+  },
 ]
 
 export function matchUserIntent(text: string): UserIntent {

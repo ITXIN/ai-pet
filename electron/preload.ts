@@ -32,6 +32,8 @@ contextBridge.exposeInMainWorld('aiPet', {
   ): Promise<VoiceTurnResult> =>
     ipcRenderer.invoke(IPC.CHAT_VOICE, audioBase64, mimeType),
 
+  abortChat: (): Promise<void> => ipcRenderer.invoke(IPC.CHAT_ABORT),
+
   clearHistory: (): Promise<void> =>
     ipcRenderer.invoke(IPC.CHAT_HISTORY_CLEAR),
 

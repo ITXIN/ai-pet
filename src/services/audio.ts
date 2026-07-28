@@ -64,8 +64,23 @@ function rmsFromTimeDomain(data: Uint8Array): number {
   return Math.sqrt(sum / data.length)
 }
 
+export interface AudioPlayback {
+  /** 播放结束或被 stop 后 resolve */
+  done: Promise<void>
+  stop: () => void
+}
+
+let activePlayback: AudioPlayback | null = null
+
+/** 停止当前 TTS 播放（无播放时 noop） */
+export function stopPlayback(): void {
+  activePlayback?.stop()
+  activePlayback = null
+}
+
 /**
  * 用 Web Audio 播放，并通过 Analyser 回调实时音量 (0~1) 供口型驱动。
+ * 新播放会自动停掉上一曲。
  */
 export async function playBase64Audio(
   base64: string,
@@ -73,10 +88,12 @@ export async function playBase64Audio(
   onLevel?: (level: number) => void,
   onStart?: () => void,
   onEnd?: () => void,
-): Promise<void> {
+): Promise<AudioPlayback> {
+  stopPlayback()
+
   const binary = atob(base64)
   const bytes = new Uint8Array(binary.length)
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+  for (let i = 0; i < bytes.length; i++) bytes[i] = binary.charCodeAt(i)
 
   const ctx = new AudioContext()
   const audioBuffer = await ctx.decodeAudioData(bytes.buffer.slice(0))
@@ -91,32 +108,59 @@ export async function playBase64Audio(
   analyser.connect(ctx.destination)
 
   let raf = 0
+  let stopped = false
   const tick = () => {
     analyser.getByteTimeDomainData(data)
     const rms = rmsFromTimeDomain(data)
-    // 放大一点让嘴部更明显
     onLevel?.(Math.min(1, rms * 3.2))
     raf = requestAnimationFrame(tick)
   }
 
-  return new Promise((resolve, reject) => {
-    source.onended = () => {
-      cancelAnimationFrame(raf)
-      onLevel?.(0)
-      onEnd?.()
-      void ctx.close()
-      resolve()
-    }
+  const cleanup = () => {
+    cancelAnimationFrame(raf)
+    onLevel?.(0)
+    onEnd?.()
+    void ctx.close()
+    if (activePlayback === playback) activePlayback = null
+  }
 
-    try {
-      source.start(0)
-      onStart?.()
-      raf = requestAnimationFrame(tick)
-    } catch (err) {
-      cancelAnimationFrame(raf)
-      void ctx.close()
-      onEnd?.()
-      reject(err)
-    }
+  let resolveDone!: () => void
+  const done = new Promise<void>((resolve) => {
+    resolveDone = resolve
   })
+
+  const finish = () => {
+    if (stopped) return
+    stopped = true
+    cleanup()
+    resolveDone()
+  }
+
+  const playback: AudioPlayback = {
+    done,
+    stop: () => {
+      if (stopped) return
+      try {
+        source.stop(0)
+      } catch {
+        /* already stopped */
+      }
+      finish()
+    },
+  }
+
+  activePlayback = playback
+
+  source.onended = () => finish()
+
+  try {
+    source.start(0)
+    onStart?.()
+    raf = requestAnimationFrame(tick)
+  } catch (err) {
+    finish()
+    throw err
+  }
+
+  return playback
 }

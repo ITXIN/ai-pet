@@ -4,6 +4,7 @@ export const IPC = {
   SETTINGS_OPEN: 'settings:open',
   CHAT_TEXT: 'chat:text',
   CHAT_VOICE: 'chat:voice',
+  CHAT_ABORT: 'chat:abort',
   CHAT_HISTORY_CLEAR: 'chat:history-clear',
   PET_APPLY_ACTION: 'pet:apply-action',
   PET_STATUS: 'pet:status',
@@ -138,6 +139,10 @@ export interface PetActionPayload {
   fromIntent?: boolean
   /** 意图锁期间跳过 motion，只更新字幕/表情 */
   skipMotion?: boolean
+  /** LLM 流式增量（边出边演）；终态事件不带此标记 */
+  streamPartial?: boolean
+  /** 流式仅字幕变化，不改表情/动作 */
+  textOnly?: boolean
 }
 
 export type PetStatus =
@@ -156,6 +161,7 @@ declare global {
       quit: () => Promise<void>
       chatText: (text: string) => Promise<TextTurnResult>
       chatVoice: (audioBase64: string, mimeType: string) => Promise<VoiceTurnResult>
+      abortChat: () => Promise<void>
       clearHistory: () => Promise<void>
       listModels: () => Promise<ModelInfo[]>
       pickModelDir: () => Promise<string | null>

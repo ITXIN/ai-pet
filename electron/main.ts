@@ -16,6 +16,7 @@ import {
   handleClearHistory,
   handleTextChat,
   handleVoiceChat,
+  abortActiveChat,
   setModelCapabilities,
 } from './ai'
 import { matchUserIntent } from '../src/shared/intentRules'
@@ -393,10 +394,30 @@ function registerIpc(): void {
   ipcMain.handle(IPC.CHAT_TEXT, async (_e, text: string) => {
     if (petWindow) petWindow.webContents.send(IPC.PET_STATUS, 'thinking')
     const intent = matchUserIntent(text)
-    const result = await handleTextChat(text)
+    let streamedMotion = false
+    const result = await handleTextChat(text, (delta) => {
+      if (!petWindow || petWindow.isDestroyed()) return
+      const skipMotion =
+        intent.matched || streamedMotion || !delta.motionChanged
+      if (delta.motionChanged && !intent.matched) streamedMotion = true
+      petWindow.webContents.send(IPC.PET_APPLY_ACTION, {
+        emotion: delta.emotion,
+        motion: delta.motion,
+        text: delta.text || undefined,
+        speaking: false,
+        skipMotion,
+        streamPartial: true,
+        textOnly:
+          !delta.emotionChanged && !delta.motionChanged && delta.textChanged,
+      })
+    })
     if (petWindow) {
       if (result.error) {
-        petWindow.webContents.send(IPC.PET_STATUS, 'error', result.error)
+        if (result.error === '已取消') {
+          petWindow.webContents.send(IPC.PET_STATUS, 'idle')
+        } else {
+          petWindow.webContents.send(IPC.PET_STATUS, 'error', result.error)
+        }
       } else {
         const merged = mergeReplyWithIntent(result.reply, intent)
         petWindow.webContents.send(IPC.PET_APPLY_ACTION, {
@@ -404,8 +425,8 @@ function registerIpc(): void {
           motion: merged.motion,
           text: merged.text,
           speaking: false,
-          // 渲染进程已在 chat 前演过意图；避免 LLM 立刻盖掉
-          skipMotion: intent.matched,
+          // 流中或意图已演过；终态只对齐字幕/表情
+          skipMotion: intent.matched || streamedMotion,
         })
         petWindow.webContents.send(IPC.PET_STATUS, 'idle')
         result.reply = {
@@ -424,20 +445,48 @@ function registerIpc(): void {
     async (_e, audioBase64: string, mimeType: string) => {
       if (petWindow) petWindow.webContents.send(IPC.PET_STATUS, 'thinking')
       let voiceIntent = matchUserIntent('')
-      const result = await handleVoiceChat(audioBase64, mimeType, (userText) => {
-        voiceIntent = matchUserIntent(userText)
-        if (!voiceIntent.matched || !petWindow || petWindow.isDestroyed()) return
-        petWindow.webContents.send(IPC.PET_APPLY_ACTION, {
-          emotion: voiceIntent.emotion ?? 'neutral',
-          motion: voiceIntent.motion ?? 'Idle',
-          text: voiceIntent.label ? `（${voiceIntent.label}）` : undefined,
-          speaking: false,
-          fromIntent: true,
-        })
-      })
+      let streamedMotion = false
+      const result = await handleVoiceChat(
+        audioBase64,
+        mimeType,
+        (userText) => {
+          voiceIntent = matchUserIntent(userText)
+          if (!voiceIntent.matched || !petWindow || petWindow.isDestroyed())
+            return
+          petWindow.webContents.send(IPC.PET_APPLY_ACTION, {
+            emotion: voiceIntent.emotion ?? 'neutral',
+            motion: voiceIntent.motion ?? 'Idle',
+            text: voiceIntent.label ? `（${voiceIntent.label}）` : undefined,
+            speaking: false,
+            fromIntent: true,
+          })
+        },
+        (delta) => {
+          if (!petWindow || petWindow.isDestroyed()) return
+          const skipMotion =
+            voiceIntent.matched || streamedMotion || !delta.motionChanged
+          if (delta.motionChanged && !voiceIntent.matched) streamedMotion = true
+          petWindow.webContents.send(IPC.PET_APPLY_ACTION, {
+            emotion: delta.emotion,
+            motion: delta.motion,
+            text: delta.text || undefined,
+            speaking: false,
+            skipMotion,
+            streamPartial: true,
+            textOnly:
+              !delta.emotionChanged &&
+              !delta.motionChanged &&
+              delta.textChanged,
+          })
+        },
+      )
       if (petWindow) {
         if (result.error) {
-          petWindow.webContents.send(IPC.PET_STATUS, 'error', result.error)
+          if (result.error === '已取消') {
+            petWindow.webContents.send(IPC.PET_STATUS, 'idle')
+          } else {
+            petWindow.webContents.send(IPC.PET_STATUS, 'error', result.error)
+          }
         } else {
           const merged = mergeReplyWithIntent(result.reply, voiceIntent)
           result.reply = {
@@ -451,7 +500,7 @@ function registerIpc(): void {
             motion: merged.motion,
             text: merged.text,
             speaking: Boolean(result.audioBase64),
-            skipMotion: voiceIntent.matched,
+            skipMotion: voiceIntent.matched || streamedMotion,
           })
           petWindow.webContents.send(
             IPC.PET_STATUS,
@@ -462,6 +511,13 @@ function registerIpc(): void {
       return result
     },
   )
+
+  ipcMain.handle(IPC.CHAT_ABORT, () => {
+    abortActiveChat()
+    if (petWindow && !petWindow.isDestroyed()) {
+      petWindow.webContents.send(IPC.PET_STATUS, 'idle')
+    }
+  })
 
   ipcMain.handle(IPC.CHAT_HISTORY_CLEAR, () => {
     handleClearHistory()

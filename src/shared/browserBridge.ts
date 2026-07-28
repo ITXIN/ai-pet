@@ -1,5 +1,9 @@
 import { DEFAULT_SETTINGS } from './defaults'
 import { parseReplyTags } from './parseReply'
+import { ReplyStreamParser } from './parseReplyStream'
+import { readChatCompletionSse } from './openaiStream'
+import { matchUserIntent } from './intentRules'
+import { mergeReplyWithIntent } from './mergeReply'
 import type {
   AppSettings,
   ChatMessage,
@@ -61,6 +65,8 @@ const listeners: ListenerMap = {
   voice: [],
 }
 
+let browserChatAbort: AbortController | null = null
+
 function emitStatus(status: PetStatus, message?: string): void {
   listeners.status.forEach((cb) => cb(status, message))
 }
@@ -104,6 +110,50 @@ async function chatCompletion(
   return content
 }
 
+async function chatCompletionPreferStream(
+  settings: AppSettings,
+  history: ChatMessage[],
+  onDelta?: (chunk: string) => void,
+  signal?: AbortSignal,
+): Promise<string> {
+  if (!settings.llm.apiKey.trim()) {
+    throw new Error('请先在设置中填写 API Key（浏览器预览也可用本地设置）')
+  }
+  const base = settings.llm.baseURL.replace(/\/$/, '')
+  try {
+    const res = await fetch(`${base}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${settings.llm.apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: settings.llm.model,
+        temperature: settings.llm.temperature,
+        messages: [
+          { role: 'system', content: settings.llm.systemPrompt },
+          ...history,
+        ],
+        stream: true,
+      }),
+      signal,
+    })
+    if (!res.ok) {
+      const errText = await res.text()
+      throw new Error(`LLM 请求失败 (${res.status}): ${errText.slice(0, 200)}`)
+    }
+    return await readChatCompletionSse(res, (chunk) => onDelta?.(chunk))
+  } catch (err) {
+    if (signal?.aborted || (err instanceof Error && err.name === 'AbortError')) {
+      throw err
+    }
+    console.warn('[browser] stream failed, fallback:', err)
+    const content = await chatCompletion(settings, history)
+    onDelta?.(content)
+    return content
+  }
+}
+
 /** 浏览器打开 Vite 页面时注入，避免缺少 Electron preload 导致白屏 */
 export function installBrowserBridge(): void {
   if (typeof window === 'undefined') return
@@ -137,29 +187,82 @@ export function installBrowserBridge(): void {
     },
 
     chatText: async (text): Promise<TextTurnResult> => {
+      browserChatAbort?.abort()
+      browserChatAbort = new AbortController()
+      const signal = browserChatAbort.signal
       try {
         emitStatus('thinking')
         const settings = loadSettings()
         const history = loadHistory()
-        const next = [...history, { role: 'user' as const, content: text.trim() }]
-        const raw = await chatCompletion(settings, next)
-        const reply = parseReplyTags(raw)
+        const trimmed = text.trim()
+        const intent = matchUserIntent(trimmed)
+        const next = [...history, { role: 'user' as const, content: trimmed }]
+        const parser = new ReplyStreamParser()
+        let streamedMotion = false
+        const raw = await chatCompletionPreferStream(
+          settings,
+          next,
+          (chunk) => {
+            const delta = parser.push(chunk)
+            if (
+              !delta.emotionChanged &&
+              !delta.motionChanged &&
+              !delta.textChanged
+            ) {
+              return
+            }
+            const skipMotion =
+              intent.matched || streamedMotion || !delta.motionChanged
+            if (delta.motionChanged && !intent.matched) streamedMotion = true
+            emitAction({
+              emotion: delta.emotion,
+              motion: delta.motion,
+              text: delta.text || undefined,
+              speaking: false,
+              skipMotion,
+              streamPartial: true,
+              textOnly:
+                !delta.emotionChanged &&
+                !delta.motionChanged &&
+                delta.textChanged,
+            })
+          },
+          signal,
+        )
+        const parsed = parseReplyTags(raw)
+        const merged = mergeReplyWithIntent(parsed, intent)
+        const reply = {
+          ...parsed,
+          emotion: merged.emotion,
+          motion: merged.motion,
+          text: merged.text,
+        }
         saveHistory([...next, { role: 'assistant', content: reply.raw }])
         emitAction({
           emotion: reply.emotion,
           motion: reply.motion,
           text: reply.text,
           speaking: false,
+          skipMotion: intent.matched || streamedMotion,
         })
         emitStatus('idle')
         return { reply }
       } catch (err) {
+        if (signal.aborted || (err instanceof Error && err.name === 'AbortError')) {
+          emitStatus('idle')
+          return {
+            reply: parseReplyTags('[emotion:neutral][motion:Idle]'),
+            error: '已取消',
+          }
+        }
         const message = err instanceof Error ? err.message : String(err)
         emitStatus('error', message)
         return {
           reply: parseReplyTags('[emotion:sad][motion:Idle]出错了…'),
           error: message,
         }
+      } finally {
+        if (browserChatAbort?.signal === signal) browserChatAbort = null
       }
     },
 
@@ -172,6 +275,12 @@ export function installBrowserBridge(): void {
         reply: parseReplyTags('[emotion:shy][motion:Idle]语音请用桌面窗口哦'),
         error: message,
       }
+    },
+
+    abortChat: async () => {
+      browserChatAbort?.abort()
+      browserChatAbort = null
+      emitStatus('idle')
     },
 
     clearHistory: async () => {

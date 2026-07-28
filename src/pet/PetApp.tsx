@@ -5,9 +5,8 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from 'react'
 import { Live2DController, isCubismReady } from '../services/live2d/controller'
-import { playBase64Audio, recordAudio } from '../services/audio'
+import { playBase64Audio, recordAudio, stopPlayback } from '../services/audio'
 import { matchUserIntent, type UserIntent } from '../shared/intentRules'
-import { mergeReplyWithIntent } from '../shared/mergeReply'
 import type { AppSettings, Emotion, MotionName, PetStatus } from '../shared/types'
 import './pet.css'
 
@@ -42,9 +41,27 @@ export function PetApp() {
   const clickThroughRef = useRef(true)
   const intentLockUntilRef = useRef(0)
   const intentLockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const turnBusyRef = useRef(false)
 
   function isIntentLocked(): boolean {
     return Date.now() < intentLockUntilRef.current
+  }
+
+  function isTurnBusy(): boolean {
+    return (
+      turnBusyRef.current ||
+      status === 'thinking' ||
+      status === 'speaking'
+    )
+  }
+
+  async function interruptTurn(): Promise<void> {
+    stopPlayback()
+    controllerRef.current?.stopMouthSync()
+    controllerRef.current?.stopSpeakingMotion()
+    await window.aiPet.abortChat()
+    turnBusyRef.current = false
+    setStatus('idle')
   }
 
   function lockIntentMotion(label?: string): void {
@@ -162,6 +179,10 @@ export function PetApp() {
               lockIntentMotion(
                 payload.text?.replace(/^[（(]|[）)]$/g, '') || undefined,
               )
+            }
+            if (payload.textOnly) {
+              if (payload.text !== undefined) setSubtitle(payload.text)
+              return
             }
             await applyVisual({
               emotion: payload.emotion,
@@ -288,6 +309,7 @@ export function PetApp() {
 
   async function sendText() {
     if (!textInput.trim()) return
+    if (isTurnBusy()) return
     const userText = textInput.trim()
     setError('')
     setTextInput('')
@@ -298,9 +320,15 @@ export function PetApp() {
       await applyIntentNow(intent)
     }
 
+    turnBusyRef.current = true
     setStatus('thinking')
     const result = await window.aiPet.chatText(userText)
+    turnBusyRef.current = false
     if (result.error) {
+      if (result.error === '已取消') {
+        setStatus('idle')
+        return
+      }
       setError(
         result.error.includes('API Key')
           ? '还没有 API Key。请打开设置 → 大模型，填入后重试。'
@@ -309,19 +337,8 @@ export function PetApp() {
       setStatus('error')
       return
     }
-    const merged = mergeReplyWithIntent(result.reply, intent)
-    // 主进程也会发 PET_APPLY_ACTION（skipMotion）；这里只补字幕，避免双播
-    setSubtitle(merged.text)
-    if (!intent.matched || !isIntentLocked()) {
-      await applyVisual({
-        emotion: merged.emotion,
-        motion: merged.motion,
-        text: merged.text,
-        skipMotion: intent.matched,
-      })
-    } else if (merged.emotion) {
-      await controllerRef.current?.setEmotion(merged.emotion)
-    }
+    // 主进程流式增量 + 终态已 apply；此处只兜底字幕与状态
+    setSubtitle(result.reply.text)
     setStatus('idle')
     if (onboardingStep === 1) setOnboardingStep(2)
   }
@@ -334,6 +351,13 @@ export function PetApp() {
       return
     }
 
+    if (status === 'speaking' || status === 'thinking') {
+      await interruptTurn()
+      return
+    }
+
+    if (isTurnBusy()) return
+
     try {
       setError('')
       setStatus('listening')
@@ -344,10 +368,16 @@ export function PetApp() {
       const audio = await session.done
       setRecording(false)
       stopRecordRef.current = null
+      turnBusyRef.current = true
       setStatus('thinking')
 
       const result = await window.aiPet.chatVoice(audio.base64, audio.mimeType)
+      turnBusyRef.current = false
       if (result.error) {
+        if (result.error === '已取消') {
+          setStatus('idle')
+          return
+        }
         setError(
           result.error.includes('API Key')
             ? '还没有 API Key。请打开设置 → 大模型，填入后重试。'
@@ -359,21 +389,13 @@ export function PetApp() {
         return
       }
 
-      const intent = matchUserIntent(result.userText)
-      const merged = mergeReplyWithIntent(result.reply, intent)
-      // 意图已在转写后由主进程 fromIntent 播过；此处只更新字幕/表情
-      setSubtitle(merged.text)
-      if (merged.emotion) {
-        await controllerRef.current?.setEmotion(merged.emotion)
-      }
-      if (!intent.matched && !isIntentLocked()) {
-        await controllerRef.current?.playMotion(merged.motion)
-      }
+      // 主进程意图预演 + 流式标签已 apply；此处播 TTS（合成仍等全文）
+      setSubtitle(result.reply.text)
 
       if (result.audioBase64 && result.mimeType) {
         setStatus('speaking')
         const ctrl = controllerRef.current
-        await playBase64Audio(
+        const playback = await playBase64Audio(
           result.audioBase64,
           result.mimeType,
           (level) => ctrl?.setMouthOpen(level),
@@ -383,11 +405,13 @@ export function PetApp() {
             ctrl?.stopSpeakingMotion()
           },
         )
+        await playback.done
       }
       setStatus('idle')
       if (onboardingStep === 1) setOnboardingStep(2)
     } catch (err) {
       setRecording(false)
+      turnBusyRef.current = false
       setStatus('error')
       setError(
         err instanceof Error
@@ -587,7 +611,9 @@ export function PetApp() {
             className={recording ? 'recording' : ''}
             onClick={() => void toggleVoice()}
           >
-            {recording ? '停止' : '语音'}
+            {recording || status === 'speaking' || status === 'thinking'
+              ? '停止'
+              : '语音'}
           </button>
           <button type="button" onClick={() => setPanelOpen((v) => !v)}>
             {panelOpen ? '收起' : '输入'}
@@ -602,11 +628,16 @@ export function PetApp() {
               value={textInput}
               onChange={(e) => setTextInput(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') void sendText()
+                if (e.key === 'Enter' && !isTurnBusy()) void sendText()
               }}
               placeholder="打字聊天…试试「请跳舞」"
+              disabled={status === 'thinking' || status === 'speaking'}
             />
-            <button type="button" onClick={() => void sendText()}>
+            <button
+              type="button"
+              onClick={() => void sendText()}
+              disabled={status === 'thinking' || status === 'speaking'}
+            >
               发送
             </button>
           </div>
