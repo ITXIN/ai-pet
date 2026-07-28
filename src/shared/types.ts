@@ -74,6 +74,10 @@ export interface AppSettings {
     autoBlink: boolean
     /** 视线跟随指针 */
     lookAt: boolean
+    /** 无指针时闲逛眼神 */
+    idleEye: boolean
+    /** ParamBreath 呼吸 */
+    autoBreath: boolean
   }
 }
 

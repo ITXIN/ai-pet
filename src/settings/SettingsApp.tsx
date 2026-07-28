@@ -433,8 +433,42 @@ export function SettingsApp() {
               />
               视线跟随鼠标
             </label>
+            <label className="checkbox">
+              <input
+                type="checkbox"
+                checked={settings.general.idleEye !== false}
+                onChange={(e) =>
+                  setSettings({
+                    ...settings,
+                    general: {
+                      ...settings.general,
+                      idleEye: e.target.checked,
+                    },
+                  })
+                }
+              />
+              闲逛眼神
+            </label>
+            <label className="checkbox">
+              <input
+                type="checkbox"
+                checked={settings.general.autoBreath !== false}
+                onChange={(e) =>
+                  setSettings({
+                    ...settings,
+                    general: {
+                      ...settings.general,
+                      autoBreath: e.target.checked,
+                    },
+                  })
+                }
+              />
+              呼吸
+            </label>
             <p className="desc">
-              眨眼 / 注视参考 AIRI 等 Live2D 伴侣的「生命感」做法；说话时会暂停眨眼以免抢口型。
+              眨眼 / 注视 / 闲逛眼神 / 呼吸参考 AIRI 等 Live2D
+              伴侣；说话时减弱呼吸与闲逛、暂停眨眼，并每帧重涂口型以免被动作盖掉。鼠标离开约
+              1 秒后视线回中。
             </p>
             <label>
               宽度 ({settings.general.petWidth}px)

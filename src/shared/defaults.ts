@@ -43,6 +43,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
     onboardingDone: false,
     autoBlink: true,
     lookAt: true,
+    idleEye: true,
+    autoBreath: true,
   },
 }
 

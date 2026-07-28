@@ -120,6 +120,8 @@ export function PetApp() {
         controller.setLifeOptions({
           autoBlink: s.general.autoBlink !== false,
           lookAt: s.general.lookAt !== false,
+          idleEye: s.general.idleEye !== false,
+          autoBreath: s.general.autoBreath !== false,
         })
 
         try {
@@ -154,6 +156,8 @@ export function PetApp() {
             controller.setLifeOptions({
               autoBlink: next.general.autoBlink !== false,
               lookAt: next.general.lookAt !== false,
+              idleEye: next.general.idleEye !== false,
+              autoBreath: next.general.autoBreath !== false,
             })
             controller.resize(next.general.petWidth, next.general.petHeight)
             try {
@@ -280,17 +284,27 @@ export function PetApp() {
     }
   }, [])
 
-  // 视线跟随：指针在窗内时驱动眼球/头，离开回中
+  // 视线跟随：指针在窗内时驱动；离开约 1s 后回中（注视滞留）
   useEffect(() => {
+    let clearTimer: ReturnType<typeof setTimeout> | null = null
     const onMove = (e: MouseEvent) => {
+      if (clearTimer) {
+        clearTimeout(clearTimer)
+        clearTimer = null
+      }
       controllerRef.current?.setLookAtFromClient(e.clientX, e.clientY)
     }
     const onLeave = () => {
-      controllerRef.current?.clearLookAt()
+      if (clearTimer) clearTimeout(clearTimer)
+      clearTimer = setTimeout(() => {
+        controllerRef.current?.clearLookAt()
+        clearTimer = null
+      }, 1000)
     }
     window.addEventListener('mousemove', onMove)
     document.addEventListener('mouseleave', onLeave)
     return () => {
+      if (clearTimer) clearTimeout(clearTimer)
       window.removeEventListener('mousemove', onMove)
       document.removeEventListener('mouseleave', onLeave)
     }
@@ -437,6 +451,8 @@ export function PetApp() {
           onboardingDone: true,
           autoBlink: true,
           lookAt: true,
+          idleEye: true,
+          autoBreath: true,
         }),
         onboardingDone: true,
       },

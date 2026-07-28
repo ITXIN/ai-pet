@@ -38,6 +38,8 @@ function clamp(v: number, min: number, max: number): number {
 export interface LifeOptions {
   autoBlink?: boolean
   lookAt?: boolean
+  idleEye?: boolean
+  autoBreath?: boolean
 }
 
 export class Live2DController {
@@ -61,6 +63,8 @@ export class Live2DController {
 
   private autoBlink = true
   private lookAtEnabled = true
+  private idleEye = true
+  private autoBreath = true
   private lifeTicker: (() => void) | null = null
   private emotionTargets: Record<string, number> = {}
   private emotionCurrent: Record<string, number> = {}
@@ -69,6 +73,9 @@ export class Live2DController {
   private focusCurrentX = 0
   private focusCurrentY = 0
   private focusActive = false
+  private wanderTargetX = 0
+  private wanderTargetY = 0
+  private wanderUntil = 0
   private blinkOpenUntil = 0
   private blinkPhase: 'open' | 'closing' | 'closed' | 'opening' = 'open'
   private blinkMul = 1
@@ -111,10 +118,16 @@ export class Live2DController {
   setLifeOptions(opts: LifeOptions): void {
     if (opts.autoBlink !== undefined) this.autoBlink = opts.autoBlink
     if (opts.lookAt !== undefined) this.lookAtEnabled = opts.lookAt
+    if (opts.idleEye !== undefined) this.idleEye = opts.idleEye
+    if (opts.autoBreath !== undefined) this.autoBreath = opts.autoBreath
     if (!this.lookAtEnabled) {
       this.focusActive = false
       this.focusTargetX = 0
       this.focusTargetY = 0
+    }
+    if (!this.idleEye) {
+      this.wanderTargetX = 0
+      this.wanderTargetY = 0
     }
   }
 
@@ -269,11 +282,43 @@ export class Live2DController {
     }
   }
 
+  private updateWander(now: number): void {
+    if (!this.idleEye || this.focusActive) return
+    if (now < this.wanderUntil) return
+    const amp = this.speaking ? 0.12 : 0.42
+    this.wanderTargetX = (Math.random() * 2 - 1) * amp
+    this.wanderTargetY = (Math.random() * 2 - 1) * amp * 0.55
+    this.wanderUntil = now + 1400 + Math.random() * 2600
+  }
+
   private updateLookAt(): void {
-    const tx = this.focusActive && this.lookAtEnabled ? this.focusTargetX : 0
-    const ty = this.focusActive && this.lookAtEnabled ? this.focusTargetY : 0
-    this.focusCurrentX = lerp(this.focusCurrentX, tx, 0.12)
-    this.focusCurrentY = lerp(this.focusCurrentY, ty, 0.12)
+    let tx = 0
+    let ty = 0
+    if (this.focusActive && this.lookAtEnabled) {
+      tx = this.focusTargetX
+      ty = this.focusTargetY
+    } else if (this.idleEye) {
+      tx = this.wanderTargetX
+      ty = this.wanderTargetY
+    }
+    const rate = this.speaking ? 0.08 : 0.12
+    this.focusCurrentX = lerp(this.focusCurrentX, tx, rate)
+    this.focusCurrentY = lerp(this.focusCurrentY, ty, rate)
+  }
+
+  private applyBreath(now: number): void {
+    if (!this.autoBreath) return
+    const speed = this.speaking ? 0.0016 : 0.0022
+    const amp = this.speaking ? 0.28 : 0.45
+    const v = 0.5 + amp * Math.sin(now * speed)
+    this.setParam('ParamBreath', v)
+  }
+
+  private applyMouthOverride(): void {
+    if (!this.speaking && this.mouthSmoothed < 0.01) return
+    for (const id of this.capabilities.lipSyncParams) {
+      this.setParam(id, this.mouthSmoothed)
+    }
   }
 
   private updateEmotionLerp(): void {
@@ -292,8 +337,10 @@ export class Live2DController {
     if (!this.model) return
     const now = performance.now()
     this.updateBlink(now)
+    this.updateWander(now)
     this.updateLookAt()
     this.updateEmotionLerp()
+    this.applyBreath(now)
 
     const lip = new Set(this.capabilities.lipSyncParams)
 
@@ -318,12 +365,20 @@ export class Live2DController {
       }
     }
 
-    if (this.lookAtEnabled || Math.abs(this.focusCurrentX) > 0.01) {
+    if (
+      this.lookAtEnabled ||
+      this.idleEye ||
+      Math.abs(this.focusCurrentX) > 0.01 ||
+      Math.abs(this.focusCurrentY) > 0.01
+    ) {
       this.setParam('ParamEyeBallX', this.focusCurrentX)
       this.setParam('ParamEyeBallY', -this.focusCurrentY * 0.6)
       this.setParam('ParamAngleX', this.focusCurrentX * 15)
       this.setParam('ParamAngleY', -this.focusCurrentY * 10)
     }
+
+    // motion 更新后可能盖嘴：说话中每帧重涂口型
+    this.applyMouthOverride()
   }
 
   private startLifeTicker(): void {
