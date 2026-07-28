@@ -1,0 +1,16 @@
+{
+  "displayName": "Mao",
+  "license": "sample",
+  "notes": "Live2D Cubism 官方示例（含多表情与交互动作），仅供开发演示，不可商用售卖。商用请替换为已授权角色包。",
+  "emotionMap": {
+    "neutral": "exp_01",
+    "happy": "exp_02",
+    "sad": "exp_03",
+    "angry": "exp_04",
+    "surprised": "exp_05",
+    "shy": "exp_06",
+    "thinking": "exp_07"
+  },
+  "talkMotionGroup": "Idle",
+  "idleMotionGroup": "Idle"
+}

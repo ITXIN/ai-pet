@@ -1,0 +1,8 @@
+{
+  "displayName": "Hiyori",
+  "license": "sample",
+  "notes": "Live2D Cubism 官方示例，仅供开发演示，不可商用售卖。无 .exp3，表情走参数预设。",
+  "emotionMap": {},
+  "talkMotionGroup": "Idle",
+  "idleMotionGroup": "Idle"
+}

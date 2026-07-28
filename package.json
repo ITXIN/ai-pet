@@ -1,0 +1,63 @@
+{
+  "name": "ai-pet",
+  "version": "0.1.0",
+  "description": "Mac 桌面宠物 — Electron + Live2D + 语音对话",
+  "main": "dist-electron/main.js",
+  "author": "ai-pet",
+  "license": "MIT",
+  "scripts": {
+    "dev": "env -u NODE_OPTIONS vite",
+    "build": "tsc -p tsconfig.node.json --noEmit && vite build",
+    "dist": "npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false env -u NODE_OPTIONS electron-builder --mac dmg",
+    "start": "env -u NODE_OPTIONS electron .",
+    "test:parse": "npx --yes tsx -e \"import { parseReplyTags } from './src/shared/parseReply.ts'; const r = parseReplyTags('[emotion:happy][motion:Wave]你好'); if (r.emotion!=='happy'||r.motion!=='Wave'||r.text!=='你好') { console.error(r); process.exit(1)}; console.log('parse ok', r);\"",
+    "test:intent": "npx --yes tsx -e \"import { matchUserIntent } from './src/shared/intentRules.ts'; import { mergeReplyWithIntent } from './src/shared/mergeReply.ts'; import { parseReplyTags } from './src/shared/parseReply.ts'; const i=matchUserIntent('请跳舞'); if(!i.matched||i.motion!=='Dance') { console.error(i); process.exit(1)}; const m=mergeReplyWithIntent(parseReplyTags('随便聊聊'), i); if(m.motion!=='Dance'||m.emotion!=='happy'){console.error(m);process.exit(1)}; console.log('intent ok', i, m);\""
+  },
+  "dependencies": {
+    "electron-store": "^8.2.0",
+    "pixi-live2d-display": "0.4.0",
+    "pixi.js": "^6.5.10",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8",
+    "typescript": "^5.7.2",
+    "vite": "^5.4.11",
+    "vite-plugin-electron": "^0.28.8",
+    "vite-plugin-electron-renderer": "^0.14.6"
+  },
+  "build": {
+    "appId": "com.aipet.desktop",
+    "productName": "AI Pet",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "public/models/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.entertainment",
+      "target": [
+        "dmg"
+      ],
+      "identity": null,
+      "hardenedRuntime": true,
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "需要麦克风权限以进行语音对话"
+      }
+    },
+    "extraResources": [
+      {
+        "from": "public/models",
+        "to": "models"
+      }
+    ]
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "displayName": "CommercialPack",
+  "license": "commercial",
+  "notes": "将已授权的 .moc3 / 贴图 / motions / expressions 与 .model3.json 放到同级目录；目录名不要以下划线开头才会被扫描。",
+  "emotionMap": {
+    "neutral": 0,
+    "happy": 1,
+    "sad": 2,
+    "angry": 3,
+    "surprised": 4,
+    "shy": 5,
+    "thinking": 6
+  },
+  "talkMotionGroup": "Talk",
+  "idleMotionGroup": "Idle"
+}

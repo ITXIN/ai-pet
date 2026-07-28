@@ -1,0 +1,232 @@
+:root {
+  color-scheme: light;
+  --bg: #f6f3ee;
+  --panel: #fffdf9;
+  --ink: #1f1a14;
+  --muted: #6d645a;
+  --line: #e7dfd4;
+  --accent: #c45c26;
+  --accent-soft: #f3d5c0;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  font-family: "Iowan Old Style", "Songti SC", "Georgia", serif;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+.settings-loading {
+  display: grid;
+  place-items: center;
+  height: 100%;
+}
+
+.settings-root {
+  display: grid;
+  grid-template-columns: 180px 1fr;
+  height: 100%;
+}
+
+.settings-nav {
+  padding: 24px 16px;
+  border-right: 1px solid var(--line);
+  background: linear-gradient(180deg, #faf6f0, #efe6da);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.settings-nav h1 {
+  margin: 0 0 16px;
+  font-size: 22px;
+  letter-spacing: 0.02em;
+}
+
+.settings-nav button {
+  text-align: left;
+  border: none;
+  background: transparent;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font: inherit;
+  font-size: 15px;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.settings-nav button.active,
+.settings-nav button:hover {
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+
+.settings-hint {
+  margin-top: auto;
+  min-height: 20px;
+  font-size: 12px;
+  color: var(--accent);
+}
+
+.settings-main {
+  padding: 28px 32px;
+  overflow: auto;
+  background: var(--panel);
+}
+
+.settings-main h2 {
+  margin: 0 0 8px;
+  font-size: 24px;
+}
+
+.desc {
+  margin: 0 0 20px;
+  color: var(--muted);
+  font-size: 14px;
+  font-family: "PingFang SC", "Segoe UI", sans-serif;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+  font-size: 13px;
+  color: var(--muted);
+  font-family: "PingFang SC", "Segoe UI", sans-serif;
+}
+
+label.checkbox {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+input,
+textarea,
+select {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--ink);
+  background: #fff;
+  font-family: "SF Pro Text", "PingFang SC", sans-serif;
+}
+
+textarea {
+  resize: vertical;
+  line-height: 1.45;
+}
+
+.primary,
+.row button {
+  border: none;
+  border-radius: 10px;
+  padding: 10px 16px;
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  font-family: "PingFang SC", "Segoe UI", sans-serif;
+}
+
+.primary {
+  background: var(--accent);
+  color: #fff;
+}
+
+.row {
+  display: flex;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.row button:not(.primary) {
+  background: #efe8df;
+  color: var(--ink);
+}
+
+.model-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.model-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+
+.model-card strong {
+  font-size: 15px;
+}
+
+.model-card span {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.model-card.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.empty {
+  color: var(--muted);
+  font-size: 13px;
+  font-family: "PingFang SC", sans-serif;
+}
+
+.settings-version {
+  margin-top: auto;
+  padding-top: 16px;
+  font-size: 12px;
+  color: var(--muted);
+  font-family: "PingFang SC", sans-serif;
+}
+
+.onboarding-banner {
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  border: 1px solid #e8b896;
+  font-family: "PingFang SC", sans-serif;
+}
+
+.onboarding-banner strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.onboarding-banner p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.desc.warn {
+  color: #8a3b12;
+  background: #fff1e6;
+  padding: 10px 12px;
+  border-radius: 10px;
+}
+
